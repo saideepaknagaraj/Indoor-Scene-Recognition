@@ -1,0 +1,709 @@
+---
+title: "Advanced AI and ML"
+author: "Divya Halliyavar (22201765)"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**The task is to build a predictive model to predict the type of indoor
+scene from the image data.**
+
+**1. Deploy at least 4 different deep learning systems characterized by
+different configurations, hyperparameters,and training settings
+(architecture, number of hidden units, regularization, kernel size,
+filter size, optimization,etc.). These deep learning systems can be of
+the same type, for example 4 different DNNs characterized by different
+architectures and settings, or of different types, for example 2 DNNs
+and 2 CNNs with different settings.Motivate clearly the choices made in
+relation to the settings, configurations, and hyperparameteres used to
+define the different deep learning systems.**
+
+**2. Compare appropriately the deep learning systems considered,
+evaluating and discussing their relative merits.Comment on their
+training and predictive performance, and select the best model a
+predicting the type of indoor scene from the data.**
+
+```{r}
+#Including all the library
+library("jpeg")
+library(keras)
+library(reticulate)
+library(caret)
+```
+
+```{r}
+
+set.seed(121)
+training_data_dir <- "data_indoor/train"
+validation_data_dir <- "data_indoor/validation"
+test_data_dir = "data_indoor/test"
+
+train_data_generator <- image_data_generator(rescale = 1/255)
+train_generator <- flow_images_from_directory(
+training_data_dir,
+train_data_generator,
+target_size = c(64, 64),
+batch_size = 17,
+class_mode = "categorical"
+)
+
+validation_data_generator <- image_data_generator(rescale = 1/255)
+validation_generator <- flow_images_from_directory(
+validation_data_dir,
+validation_data_generator,
+target_size = c(64, 64),
+batch_size = 17,
+class_mode = "categorical"
+)
+
+test_data_generator <- image_data_generator(rescale = 1/255)
+test_generator <- flow_images_from_directory(
+  test_data_dir,
+  test_data_generator,
+  target_size = c(64, 64),
+  batch_size = 20,
+  class_mode ="categorical"
+)
+```
+
+**DNN**
+
+```{r}
+smooth_line <- function(y) {
+  x <- 1:length(y)
+  out_1 <- predict( loess(y ~ x) )
+  return(out_1)
+}
+
+model_1 <- keras_model_sequential() %>%
+  layer_flatten(input_shape = c(64,64,3)) %>%
+  layer_dense(units = 256, activation = "relu", name = "layer_1",kernel_regularizer = regularizer_l2(0.01)) %>%
+  
+  layer_dense(units = 128, activation = "relu", name = "layer_2", kernel_regularizer = regularizer_l2(0.01)) %>%
+  
+  layer_dense(units = 64, activation = "relu", name = "layer_3",kernel_regularizer = regularizer_l2(0.01))%>%
+
+  layer_dense(units = 10, activation = "softmax", name = "layer_out_1") %>%
+  
+  compile(loss = "categorical_crossentropy", metrics = "accuracy",
+optimizer = optimizer_adam(learning_rate = 0.002))
+
+summary(model_1)
+
+fit_1 <- model_1 %>% fit(
+  train_generator,
+  steps_per_epoch = nrow(train_generator),
+  epochs = 20,
+  validation_data = validation_generator,
+  validation_steps = nrow(validation_generator)
+)
+```
+
+```{r}
+out_1 <- cbind(fit_1$metrics$accuracy,
+fit_1$metrics$val_accuracy,
+fit_1$metrics$loss,
+fit_1$metrics$val_loss)
+cols <- c("green", "orange")
+par(mfrow = c(1,2))
+
+# Plotting accuracy for both test and validation
+matplot(out_1[,1:2], pch = 19, ylab = "Accuracy", xlab = "Epochs",
+col = adjustcolor(cols, 0.3),
+log = "y")
+matlines(apply(out_1[,1:2], 2, smooth_line), lty = 1, col = cols, lwd = 2)
+legend("topright", legend = c("Training", "Validation"),
+fill = cols, bty = "n")
+
+# Plotting loss for both test and validation
+matplot(out_1[,3:4], pch = 19, ylab = "Loss", xlab = "Epochs",
+col = adjustcolor(cols, 0.3))
+matlines(apply(out_1[,3:4], 2, smooth_line), lty = 1, col = cols, lwd = 2)
+legend("topright", legend = c("Training", "Validation"),
+fill = cols, bty = "n")
+```
+
+```{r}
+model_1 %>% evaluate(train_generator, train_generator$classes, verbose = 0)
+```
+
+```{r}
+model_1 %>% evaluate(validation_generator, validation_generator$classes, verbose = 0)
+```
+
+**CNN**
+
+```{r}
+model_2 <- keras_model_sequential() %>%
+
+layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+input_shape = c(64, 64, 3)) %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+
+layer_flatten() %>%
+layer_dense(units = 64, activation = "relu", kernel_regularizer = regularizer_l2(0.1)) %>%
+layer_dropout(0.1) %>%
+layer_dense(units = 10, activation = "softmax") %>%
+
+compile(
+loss = "categorical_crossentropy",
+metrics = "accuracy",
+optimizer = optimizer_adam()
+)
+```
+
+```{r}
+fit_2 <- model_2 %>% fit(
+train_generator,
+steps_per_epoch = 100,
+epochs = 30,
+validation_data = validation_generator,
+validation_steps =50,
+verbose=0
+)
+```
+
+```{r}
+smooth_line <- function(y) {
+x <- 1:length(y)
+out_2 <- predict( loess(y ~ x) )
+return(out_2)
+}
+
+out_2 <- cbind(fit_2$metrics$accuracy,
+fit_2$metrics$val_accuracy,
+fit_2$metrics$loss,
+fit_2$metrics$val_loss)
+cols <- c("green", "orange")
+par(mfrow = c(1,2))
+
+matplot(out_2[,1:2], pch = 19, ylab = "Accuracy", xlab = "Epochs",
+col = adjustcolor(cols, 0.3),
+log = "y")
+matlines(apply(out_2[,1:2], 2, smooth_line), lty = 1, col = cols, lwd = 2)
+legend("bottomright", legend = c("Training", "Validation"),
+fill = cols, bty = "n")
+
+matplot(out_2[,3:4], pch = 19, ylab = "Loss", xlab = "Epochs",
+col = adjustcolor(cols, 0.3))
+matlines(apply(out_2[,3:4], 2, smooth_line), lty = 1, col = cols, lwd = 2)
+legend("topright", legend = c("Training", "Validation"),
+fill = cols, bty = "n")
+```
+
+```{r}
+model_2 %>% evaluate(train_generator, train_generator$classes, verbose = 0)
+```
+
+```{r}
+model_2 %>% evaluate(validation_generator, validation_generator$classes, verbose = 0)
+```
+
+**Data augmentation**
+
+```{r}
+data_augmentation <- image_data_generator(
+rescale = 1/255,
+rotation_range = 30,
+width_shift_range = 0.2,
+height_shift_range = 0.2,
+shear_range = 0.2,
+zoom_range = 0.1,
+horizontal_flip = TRUE,
+fill_mode = "nearest"
+)
+
+train_generator <- flow_images_from_directory(
+training_data_dir,
+data_augmentation,
+target_size = c(64, 64),
+batch_size = 20,
+class_mode = "categorical"
+)
+```
+
+**CNN with data augmentation and new updated parameters**
+
+```{r}
+model_2_augment <- keras_model_sequential() %>%
+
+layer_conv_2d(filters =512, kernel_size = c(3, 3), activation = "relu",padding = "same",
+input_shape = c(64, 64, 3)) %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_batch_normalization() %>%
+layer_conv_2d(filters = 256, kernel_size = c(3, 3), activation = "relu",padding = "same") %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_batch_normalization() %>%
+layer_conv_2d(filters = 128, kernel_size = c(4, 4), activation = "relu",padding = "same") %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+   layer_batch_normalization() %>%
+layer_conv_2d(filters = 128, kernel_size = c(4, 4), activation = "relu",padding = "same") %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+
+layer_flatten() %>%
+layer_dense(units = 512, activation = "relu") %>%
+layer_dense(units = 10, activation = "softmax") %>%
+
+compile(
+loss = "categorical_crossentropy",
+metrics = "accuracy",
+optimizer = optimizer_adam()
+)
+```
+
+```{r}
+fit_2_augment <- model_2_augment %>% fit(
+train_generator,
+steps_per_epoch = 80,
+epochs = 30,
+validation_data = validation_generator,
+validation_steps = 50,
+verbose=0
+)
+```
+
+```{r}
+out_3 <- cbind(fit_2_augment$metrics$accuracy,
+fit_2_augment$metrics$val_accuracy,
+fit_2_augment$metrics$loss,
+fit_2_augment$metrics$val_loss)
+cols <- c("black", "dodgerblue3")
+par(mfrow = c(1,2))
+
+matplot(out_3[,1:2], pch = 19, ylab = "Accuracy", xlab = "Epochs",
+col = adjustcolor(cols, 0.3),
+log = "y")
+matlines(apply(out_3[,1:2], 2, smooth_line), lty = 1, col = cols, lwd = 2)
+legend("bottomright", legend = c("Training", "Validation"),
+fill = cols, bty = "n")
+
+matplot(out_3[,3:4], pch = 19, ylab = "Loss", xlab = "Epochs",
+col = adjustcolor(cols, 0.3))
+matlines(apply(out_3[,3:4], 2, smooth_line), lty = 1, col = cols, lwd = 2)
+legend("topright", legend = c("Training", "Validation"),
+fill = cols, bty = "n")
+
+```
+
+```{r}
+model_2_augment %>% evaluate(train_generator, train_generator$classes, verbose = 0)
+```
+
+```{r}
+model_2_augment %>% evaluate(validation_generator, validation_generator$classes, verbose = 0)
+```
+
+**Model 4 -Aggregation of class**
+
+```{r}
+aggregated_path <- c("data_indoor/train/breakfast_nook","data_indoor/validation/breakfast_nook","data_indoor/test/breakfast_nook","data_indoor/train/hallway","data_indoor/validation/hallway","data_indoor/test/hallway")
+
+dir.create(aggregated_path[1])
+dir.create(aggregated_path[2])
+dir.create(aggregated_path[3])
+dir.create(aggregated_path[4])
+dir.create(aggregated_path[5])
+dir.create(aggregated_path[6])
+
+
+original_path=c("data_indoor/train/kitchen","data_indoor/train/dining_room","data_indoor/validation/kitchen","data_indoor/validation/dining_room","data_indoor/test/kitchen","data_indoor/test/dining_room","data_indoor/train/stairs","data_indoor/train/corridor","data_indoor/validation/stairs","data_indoor/validation/corridor","data_indoor/test/stairs","data_indoor/test/corridor")
+
+flag=1
+for (i in 1:6 ) {
+
+file.copy(from = list.files(original_path[flag], full.names = TRUE), 
+          to = aggregated_path[i])
+flag=flag+1
+file.copy(from = list.files(original_path[flag], full.names = TRUE), 
+          to = aggregated_path[i])
+flag=flag+1
+}
+```
+
+```{r}
+aggregate_class_mapping <- c("bathroom",
+                   "bedroom",
+                   "children_room",
+                   "closet",
+                   "hallway",
+                   "garage",
+                   "breakfast_nook",
+                   "living_room")
+```
+
+```{r}
+#Implementing data augmentation
+data_augmentation <- image_data_generator(
+rescale = 1/255,
+rotation_range = 30,
+width_shift_range = 0.2,
+height_shift_range = 0.2,
+shear_range = 0.2,
+zoom_range = 0.1,
+horizontal_flip = TRUE,
+fill_mode = "nearest"
+)
+
+train_generator <- flow_images_from_directory(
+training_data_dir,
+data_augmentation,
+target_size = c(64, 64),
+batch_size = 20,
+class_mode = "categorical",
+classes=aggregate_class_mapping
+)
+
+validation_data_generator <- image_data_generator(rescale = 1/255)
+validation_generator <- flow_images_from_directory(
+  validation_data_dir,
+  validation_data_generator,
+  target_size = c(64, 64),
+  batch_size = 20,
+  class_mode = "categorical",
+  classes = aggregate_class_mapping
+)
+
+test_data_generator <- image_data_generator(rescale = 1/255)
+test_generator <- flow_images_from_directory(
+  test_data_dir,
+  test_data_generator,
+  target_size = c(64, 64),
+  batch_size = 20,
+  class_mode = "categorical",
+  classes = aggregate_class_mapping
+)
+```
+
+```{r}
+#Implementing CNN with data augmentation and aggregation
+model_4 <- keras_model_sequential() %>%
+
+layer_conv_2d(filters =512, kernel_size = c(3, 3), activation = "relu",padding = "same",
+input_shape = c(64, 64, 3)) %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_batch_normalization() %>%
+layer_conv_2d(filters = 256, kernel_size = c(3, 3), activation = "relu",padding = "same") %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_batch_normalization() %>%
+layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu",padding = "same") %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%  
+  layer_batch_normalization() %>%
+layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu",padding = "same") %>%
+layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+
+layer_flatten() %>%
+layer_dense(units = 512, activation = "relu") %>%
+layer_dense(units = 8, activation = "softmax") %>%
+
+compile(
+loss = "categorical_crossentropy",
+metrics = "accuracy",
+optimizer = optimizer_adam()
+)
+
+```
+
+```{r}
+fit_4 <- model_4 %>% fit(
+train_generator,
+steps_per_epoch = 80,
+epochs = 30,
+validation_data = validation_generator,
+validation_steps = 30,
+verbose=0
+)
+```
+
+```{r}
+out_4 <- cbind(fit_4$metrics$accuracy,
+fit_4$metrics$val_accuracy,
+fit_4$metrics$loss,
+fit_4$metrics$val_loss)
+cols <- c("black", "dodgerblue3")
+par(mfrow = c(1,2))
+
+matplot(out_4[,1:2], pch = 19, ylab = "Accuracy", xlab = "Epochs",
+col = adjustcolor(cols, 0.3),
+log = "y")
+matlines(apply(out_4[,1:2], 2, smooth_line), lty = 1, col = cols, lwd = 2)
+legend("bottomright", legend = c("Training", "Validation"),
+fill = cols, bty = "n")
+
+matplot(out_4[,3:4], pch = 19, ylab = "Loss", xlab = "Epochs",
+col = adjustcolor(cols, 0.3))
+matlines(apply(out_4[,3:4], 2, smooth_line), lty = 1, col = cols, lwd = 2)
+legend("topright", legend = c("Training", "Validation"),
+fill = cols, bty = "n")
+```
+
+```{r}
+model_4 %>% evaluate(train_generator, train_generator$classes, verbose = 0)
+```
+
+```{r}
+model_4 %>% evaluate(validation_generator, validation_generator$classes, verbose = 0)
+```
+
+**Report**
+
+***Model 1 - DNN***
+
+Images have been resized and fed into a deep neural network with three
+hidden layers, where each layer has 256, 128, and 64 neuron units. The
+ReLU activation function has been used for the input layers to prevent
+the vanishing gradient problem. ReLU helps to avoid activation function
+saturation and updates parameter values effectively. The output layer
+has ten neurons to predict ten class outputs, and the softmax function
+has been used as the activation function to optimize the output layer.
+Softmax is a common activation function for multiclass classification in
+neural networks. It's important to note that there are other factors
+that contribute to the success of a deep learning model, such as data
+quality, hyperparameter tuning, regularization, and optimization
+algorithms. Therefore, it's necessary to consider all of these factors
+to achieve the best model performance. L2 regularization is a technique
+used to reduce the problem of overfitting in machine learning models. By
+smoothly reducing the weights of parameters that do not significantly
+affect the objective function, L2 regularization makes the model more
+resilient to changes in the input data, which can improve the model's
+generalization performance. In this approach, the parameter weights are
+updated and optimized using a technique called adaptive moment
+estimation (Adam), which calculates a unique learning rate for each
+parameter. This means that different parameters can learn at different
+rates, which can be helpful when training large neural networks. Adam is
+a technique used in deep learning to speed up the optimization process
+and handle sparse gradients that may occur in large neural networks.
+After training a neural network model for 20 epochs, we found that the
+accuracy on the training set was approximately 22%, while the accuracy
+on the validation set was 21% approx. Both the training and validation
+loss were about 2.17, but the curves were not smooth and had many
+fluctuations. Overall, the prediction performance was not very good,
+indicating the potential for improvement.
+
+Merits: 
+
+• The relu activation function was chosen over sigmoid and hyperbolic tangent as it avoids the issue of vanishing gradients. Unlike those functions, relu does not saturate and allows for better parameter updating. 
+• To improve the model's generalization, L2 regularization was employed as it helps the model become more robust to variations in input data.
+
+• For optimization, Adam, a widely used algorithm that
+incorporates momentum and adapts parameter updates more efficiently, was
+utilized.
+
+Demerits: 
+
+• DNNs are prone to overfitting, where the model performs well on the training data but poorly on new, unseen data. 
+
+• DNNs have many hyperparameters that need to be optimized to achieve good performance, which can be time-consuming and computationally expensive. 
+
+• The predictive performance of the model is very poor and needs to be
+improved.
+
+***Model 2- CNN***
+
+A convolution neural network (CNN) with four convolutional layers, a
+fully linked layer with a hidden and an output layer was used to extract
+intricate information from images. 32 filters with a kernel size of 3X3
+were used in the first convolution layer, while 64 filters were used in
+the second convolution layer to capture more complex information. 128
+filters with a kernel size of 3X3 were used in the third and fourth
+convolution layers to extract even more complex features. Max pooling
+operation was used to reduce the feature maps' spatial dimension, which
+decreased the model's parameter count and increased computational
+efficiency while making it less susceptible to minor input translations.
+The fully connected layers used a single hidden layer network with 64
+units and employed dropout and L2 regularisation to prevent overfitting.
+The model was evaluated using the learning curve and obtained a training
+set accuracy of 94% and a validation accuracy of 37% approx. Overfitting was
+used to alleviate the model's lack of generalizable properties. The loss
+of training was reduced, and the model addressed the
+issue that needed to be solved.
+
+Merits: 
+
+• CNNs can reduce the number of parameters required for training, making them computationally efficient compared to traditional neural networks 
+
+• CNNs can be trained end-to-end, meaning that the whole network can be trained using backpropagation with a single loss function, which simplifies the training process.
+
+• CNNs can effectively handle various types of overfitting issues by utilizing dropout and L2 regularization techniques together.
+
+Demerits:
+
+• The model was trained with the specified parameters using the
+training dataset, and its accuracy was confirmed using validation data.
+The learning curve was used to evaluate the model's performance,
+revealing a training set accuracy of 80%, indicating that it captured
+the image's intricate details. 
+
+• However, the accuracy of the model on the validation dataset was only 37%, much lower than the training accuracy, indicating a lack of generalizability. 
+
+• To address this issue, overfitting is used as a solution, and a new model is proposed to solve the problem
+
+***Model 3- Data augmentation***
+
+To address overfitting in the previous model(CNN), we employed a
+regularization technique called data augmentation, which involves
+modifying the image data through transformations such as stretching,
+shifting, and rotating. This exposes the model to new types of data,
+increasing its generalization and preventing overfitting. Our model uses
+a CNN with four convolutional layers and a fully connected layer to
+improve validation accuracy and reduce overfitting. The first
+convolutional layer has 512 filters with 3x3 kernel sizes to capture
+localized information like edges and details. The second layer has 256
+filters and a 3x3 kernel size to collect local and generated features,
+while the remaining layers have 128 filters and 4x4 filters to produce a
+feature map for more generalized images. We use padding to minimize
+information loss at the edges or corners of the image and maintain the
+size of the kernel. To capture both local and global aspects of the
+image, we use the same number of filters and filter sizes as the
+previous model, but with a 2x2 padding. We also use pooling with a size
+of (2,2), which reduces the spatial dimensions of the feature maps by a
+factor of 2 in both horizontal and vertical planes. To prevent
+overfitting, batch normalization is used to normalize the input to each
+layer with a mean of 0 and variance of 1, which stabilizes the
+distribution of inputs and helps the network learn faster. This also
+enhances the model's generalization abilities and reduces its
+sensitivity to initial parameter values. We added a fully connected
+layer with 512 hidden units and a softmax activation function in the
+output layer for multiclass classification. By using data augmentation
+and batch normalization, we resolved the overfitting problem of the
+previous model, resulting in a smoother training curve and increased
+accuracy. However, the validation accuracy of 36% falls short of
+expectations, indicating the need for further adjustments. Padding was
+used to preserve the original geometry of the feature map and prevent
+data loss at corners, resulting in an improved total validation
+accuracy.
+
+Merits: 
+
+• Batch normalisation is used to speed up training by reducing
+internal covariate shift, stabilising the distribution of inputs, and
+facilitating learning and convergence. 
+
+• Padding is used to capture intricate image information and improve the model's performance. 
+
+• Overfitting issues in the previous model were addressed with Data
+Augmentation and batch normalisation regularisation approaches. 
+
+• The validation accuracy increased to 36%, which is an improvement compared to the previous models.
+
+Demerits: 
+
+• The current model has a lower training accuracy compared to the two previous models. 
+
+• The model's computational complexity is increased by using 512 filters with a 3X3 kernel size and a fully connected layer with 512 neurons.
+
+***Model 4- Aggregation and data Augmentation***
+
+Aggregating similar classes can decrease the number of classes the model
+needs to differentiate, which can reduce overfitting and improve
+generalization. This can be helpful when data or computational resources
+are limited. Merging classes with little picture data, such as
+"corridor" and "stairs" into a single class called "hallway," or
+combining "dining room" and "kitchen" into a single class called
+"breakfast nook," can make it easier for the model to distinguish
+between them and reduce confusion. To improve the previous model's
+prediction performance, the current model uses data augmentation, four
+convoluted layers, and a fully connected layer. The first convoluted
+layer has 512 filters with 3x3 kernel sizes, and padding is used to
+improve the model's performance. The number of filters and filter sizes
+are the same as in the previous model. Batch normalization is used to
+improve generalization and prevent overfitting. The output layer has
+eight neurons and uses the softmax function as the activation function
+and optimization function. The process of merging classes involves
+grouping similar images into a single folder, such as combining the
+images of corridors and stairs into a folder called "Hallway" and
+merging "dining room" and "kitchen" into a folder named "breakfast
+nook". This has led to improved accuracy, better interpretability, and a
+reduction in data imbalance.
+
+The new model has achieved a validation accuracy of about 49% and a total
+training accuracy of about 52%. Overfitting has been addressed using batch
+normalization and data augmentation techniques, as shown by the loss
+values of 1.44 for validation and 1.27 for training data.The training
+data produced a smoother curve with less fluctuation, while the
+validation data exhibited more fluctuations in values over time. Despite
+the accuracy improvement, the validation results still fall short of
+expectations, necessitating further adjustments.
+
+Merits: 
+
+• The fourth model had the highest accuracy among the first three models used for indoor image classification.
+
+• Although the model used 512 filters, aggregating classes made it less complex and computationally efficient. 
+• Grouping related categories together can enhance the model's interpretability, such as merging kitchen and dining room into a new class named breakfast nook.
+
+Demerits:
+
+• Insufficient training data is the primary drawback of the model.
+
+• Despite using advanced filters and different combinations of hyperparameters, the model's accuracy cannot improve to the desired
+level due to the lack of training data.
+
+**3. Use the test data to evaluate the predictive performance of the
+best model. Comment on the ability of the model at recognizing the
+different scenes.**
+
+```{r}
+performance_scores <- model_4 %>% evaluate(test_generator)
+
+cat("\nloss for the obtained best model - ",performance_scores[1],"\n")
+cat("accuracy for the obtained best model - ",performance_scores[2])
+
+sensitivity_ = function(model, test_generator) {
+  
+  y_prob <- predict(model, test_generator)
+  y_pred <- factor(apply(y_prob, 1, function(x) which.max(x)-1))
+ 
+  actual <- factor(as.numeric(test_generator$classes))
+
+  confusion_matrix <- confusionMatrix(y_pred, actual)
+  confusion_matrix
+ 
+  class_sensitivity <- confusion_matrix$byClass[,"Sensitivity"]
+  return(class_sensitivity)
+}
+
+sensitivity_(model_4, test_generator)
+
+```
+
+```{r}
+for (i in 1:6){
+  unlink((aggregated_path[i]),recursive = TRUE)
+}
+```
+
+***Ability of the model at recognizing the different scenes*** 
+
+• The model's performance is not satisfactory even with the best of the four models tested.
+
+• The sensitivity value calculated for some classes is zero, indicating
+the lack of training data for these classes, which leads to incorrect
+classification and low sensitivity.
+
+• The model may have bias towards the majority class, resulting in high
+sensitivity for that class and low sensitivity for the minority class.
+
+• The model's accuracy and loss values are below average, and
+hyperparameter tuning did not help.
+
+• To improve the model's performance, different hyperparameters can be
+tried out to obtain the best combination for the highest accuracy.
+
+• Increasing the training dataset and the number of epochs can also
+improve the model's performance.
+
+• The model's subpar performance is due to a lack of data and an
+inadequate selection of hyperparameters.
